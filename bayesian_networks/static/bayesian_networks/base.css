@@ -10,9 +10,35 @@ body {
 header {
     background-color: #343a40;
     color: white;
-    padding: 1.5rem;
+    padding: 1.5rem 2rem;
     font-size: 1.75rem;
     font-weight: 700;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+}
+
+.home-button {
+    background-color: transparent;
+    color: white;
+    font-size: 1rem;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    border: 0.125rem solid white;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.3s ease-in-out;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    position: absolute;
+    left: 2rem;
+}
+
+.home-button:hover {
+    background-color: white;
+    color: #343a40;
 }
 
 main {
@@ -72,8 +98,78 @@ a:hover {
     color: #007bff;
 }
 
-.challenge-count {
-    font-size: 0.875rem;
-    color: #666;
-    font-weight: 400;
+#toolbar {
+    position: relative;
+    width: 80%;
+    margin: 0 auto;
+    overflow: hidden;
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 1rem;
+}
+
+.shape {
+    padding: 0.75rem 1.25rem;
+    background-color: #007bff;
+    color: white;
+    border-radius: 0.5rem;
+    cursor: grab;
+    user-select: none;
+    transition: background 0.3s ease-in-out;
+}
+
+.shape:hover {
+    background-color: #0056b3;
+}
+
+#network-area {
+    position: relative;
+    width: 80%;
+    height: 500px;
+    margin: 0 auto;
+    border: 2px dashed #aaa;
+    background-color: white;
+    overflow: hidden;
+}
+
+#canvas {
+    width: 100%;
+    height: 100%;
+}
+
+.draggable {
+    cursor: grab;
+}
+
+.draggable:active {
+    cursor: grabbing;
+}
+
+.control-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 1rem; /* Adds spacing between buttons */
+    margin-top: 1rem;
+}
+
+.control-buttons a, .control-buttons input {
+    width: 7.5%;
+    padding: 0.75rem 1.25rem;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.3s ease-in-out;
+    font-size: large;
+    box-sizing: content-box;
+    text-align: center;
+    text-decoration: none;
+    text-decoration: none;
+
+}
+
+.control-buttons a:hover, .control-buttons input:hover {
+    background-color: #0056b3;
 }

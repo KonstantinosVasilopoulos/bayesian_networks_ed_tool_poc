@@ -1,0 +1,282 @@
+{% extends "bayesian_networks/base.html" %}
+{% load static %}
+
+{% block title %}{{ challenge_name }}{% endblock %}
+
+{% block links %}{% endblock %}
+
+{% block content %}
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const canvas = document.getElementById("canvas");
+        const networkArea = document.getElementById("network-area");
+        let selectedElement = null;
+        let movingEndpoint = null;
+        let rectangles = [];
+        let snappedRects = new Map(); // Track which rectangles each arrow is snapped to
+        let connections = new Map(); // Global hashmap to store connections
+
+        // Deserialize given network from string to array of nodes
+        const network = '{{ network|safe }}';
+        let nodes = [];
+        const re = /\D\(\"((\w|\s)+)\"\)/;
+        network.split("->").forEach((node) => {
+            nodes.push(
+                // Parse the network keeping only the text of each node
+                // e.g. Node("Node A") has to display only "Node A"
+                ...node.split(",").map((t) => {
+                    const found = t.match(re);
+                    return found !== null ? found[1] : null;
+                })
+                .filter((i) => {
+                    return i !== null;
+                })
+            );
+        });
+
+        // Create preset rectangles
+        let startingX = 10;
+        nodes.forEach((node) => {
+            drawRect(startingX, 10, node);
+            startingX += 110;
+        });
+
+        document.querySelectorAll(".shape").forEach(shape => {
+            shape.addEventListener("dragstart", (event) => {
+                event.dataTransfer.setData("shape", event.target.dataset.shape);
+            });
+        });
+
+        networkArea.addEventListener("dragover", (event) => {
+            event.preventDefault();
+        });
+
+        networkArea.addEventListener("drop", (event) => {
+            event.preventDefault();
+            const shapeType = event.dataTransfer.getData("shape");
+            const networkRect = networkArea.getBoundingClientRect();
+            const x = event.clientX - networkRect.left;
+            const y = event.clientY - networkRect.top;
+
+            if (shapeType === "rect") {
+                drawRect(x, y, "Rectangle");
+
+            } else if (shapeType === "arrow") {
+                // Draw arrow SVG
+                const arrow = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                arrow.setAttribute("x1", x);
+                arrow.setAttribute("y1", y);
+                arrow.setAttribute("x2", x + 50);
+                arrow.setAttribute("y2", y);
+                arrow.setAttribute("stroke", "#343a40");
+                arrow.setAttribute("stroke-width", "4.5");
+                arrow.setAttribute("marker-end", "url(#arrowhead)");
+                arrow.setAttribute("class", "draggable");
+                arrow.setAttribute("data-type", "arrow");
+                canvas.appendChild(arrow);
+                snappedRects.set(arrow, { start: null, end: null });
+            }
+        });
+
+        function drawRect(x, y, t) {
+            // Draw rectangle SVG
+            const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            rect.setAttribute("x", x);
+            rect.setAttribute("y", y);
+            rect.setAttribute("width", 100);
+            rect.setAttribute("height", 50);
+            rect.setAttribute("fill", "blue");
+            rect.setAttribute("class", "draggable");
+            rect.setAttribute("data-type", "rect");
+            canvas.appendChild(rect);
+
+            // Add text to the rectangle
+            const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            text.setAttribute("x", x + 50); // Position text in the center
+            text.setAttribute("y", y + 25);
+            text.setAttribute("text-anchor", "middle");
+            text.setAttribute("fill", "white");
+            text.textContent = t;
+            canvas.appendChild(text);
+
+            rectangles.push({ rect, text });
+            connections.set(rect, new Set());
+        }
+
+        canvas.addEventListener("mousedown", function (event) {
+            if (event.target.classList.contains("draggable")) {
+                selectedElement = event.target;
+                movingEndpoint = getClosestEndpoint(selectedElement, event.clientX, event.clientY);
+                canvas.addEventListener("mousemove", moveShape);
+                document.addEventListener("mouseup", stopMove);
+            }
+        });
+
+        function moveShape(event) {
+            if (!selectedElement) return;
+            const networkRect = networkArea.getBoundingClientRect();
+            const x = event.clientX - networkRect.left;
+            const y = event.clientY - networkRect.top;
+
+            if (selectedElement.dataset.type === "rect") {
+                selectedElement.setAttribute("x", x);
+                selectedElement.setAttribute("y", y);
+
+                // Update text position
+                const rectangleData = rectangles.find(r => r.rect === selectedElement);
+                if (rectangleData) {
+                    rectangleData.text.setAttribute("x", x + 50);
+                    rectangleData.text.setAttribute("y", y + 25);
+                }
+
+                // Update arrows snapped to this rectangle
+                updateSnappedArrows(selectedElement);
+
+            } else if (selectedElement.dataset.type === "arrow") {
+                if (movingEndpoint === "start") {
+                    const snappedCoords = snapToClosestSide(x, y, "start", selectedElement);
+                    selectedElement.setAttribute("x1", snappedCoords.x);
+                    selectedElement.setAttribute("y1", snappedCoords.y);
+                } else if (movingEndpoint === "end") {
+                    const snappedCoords = snapToClosestSide(x, y, "end", selectedElement);
+                    selectedElement.setAttribute("x2", snappedCoords.x);
+                    selectedElement.setAttribute("y2", snappedCoords.y);
+                }
+            }
+        }
+
+        function getClosestEndpoint(arrow, clientX, clientY) {
+            const networkRect = networkArea.getBoundingClientRect();
+            const x1 = parseFloat(arrow.getAttribute("x1")) + networkRect.left;
+            const y1 = parseFloat(arrow.getAttribute("y1")) + networkRect.top;
+            const x2 = parseFloat(arrow.getAttribute("x2")) + networkRect.left;
+            const y2 = parseFloat(arrow.getAttribute("y2")) + networkRect.top;
+
+            const distStart = Math.hypot(clientX - x1, clientY - y1);
+            const distEnd = Math.hypot(clientX - x2, clientY - y2);
+            return distStart < distEnd ? "start" : "end";
+        }
+
+        function snapToClosestSide(x, y, endpoint, arrow) {
+            let closestRect = null;
+            let minDist = 50;
+            let snappedX = x, snappedY = y;
+
+            rectangles.forEach(rect => {
+                if (snappedRects.get(arrow)[endpoint === "start" ? "end" : "start"] === rect.rect) return;
+
+                const rectX = parseFloat(rect.rect.getAttribute("x"));
+                const rectY = parseFloat(rect.rect.getAttribute("y"));
+                const width = parseFloat(rect.rect.getAttribute("width"));
+                const height = parseFloat(rect.rect.getAttribute("height"));
+                const sides = [
+                    { x: rectX + width / 2, y: rectY },
+                    { x: rectX + width / 2, y: rectY + height },
+                    { x: rectX, y: rectY + height / 2 },
+                    { x: rectX + width, y: rectY + height / 2 }
+                ];
+                sides.forEach(side => {
+                    const dist = Math.hypot(side.x - x, side.y - y);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        closestRect = rect.rect;
+                        snappedX = side.x;
+                        snappedY = side.y;
+                    }
+                });
+            });
+
+            snappedRects.get(arrow)[endpoint] = closestRect;
+
+            if (closestRect) {
+                let startRect = snappedRects.get(arrow).start;
+                let endRect = snappedRects.get(arrow).end;
+                if (startRect && endRect) {
+                    const startText = rectangles.find(r => r.rect === startRect)?.text.textContent.trim();
+                    const endText = rectangles.find(r => r.rect === endRect)?.text.textContent.trim();
+                    if (startText && endText) {
+                        connections.get(startRect).add(endText);
+                    }
+                }
+            }
+
+            return { x: snappedX, y: snappedY };
+        }
+
+        function updateSnappedArrows(rectangle) {
+            snappedRects.forEach((snapData, arrow) => {
+                // If the start or end of the arrow is snapped to this rectangle, update its position
+                if (snapData.start === rectangle) {
+                    const snappedCoords = snapToClosestSide(parseFloat(arrow.getAttribute("x1")), parseFloat(arrow.getAttribute("y1")), "start", arrow);
+                    arrow.setAttribute("x1", snappedCoords.x);
+                    arrow.setAttribute("y1", snappedCoords.y);
+                }
+                if (snapData.end === rectangle) {
+                    const snappedCoords = snapToClosestSide(parseFloat(arrow.getAttribute("x2")), parseFloat(arrow.getAttribute("y2")), "end", arrow);
+                    arrow.setAttribute("x2", snappedCoords.x);
+                    arrow.setAttribute("y2", snappedCoords.y);
+                }
+            });
+        }
+
+        function stopMove() {
+            canvas.removeEventListener("mousemove", moveShape);
+            document.removeEventListener("mouseup", stopMove);
+            selectedElement = null;
+            movingEndpoint = null;
+        }
+
+        // Checks that the current connections in the network and returns a string representing the current state of the network
+        // e.g. "Node A->Node B"
+        function serializeNetwork() {
+            let result = "";
+            console.log(connections); // -0
+            rectangles.forEach(({ rect, text }) => {
+                const nodeName = text.textContent.trim();
+                if (connections.has(rect)) {
+                    const connectedNodes = Array.from(connections.get(rect));
+                    connectedNodes.forEach((connectedNode) => {
+                        result += `,${nodeName}->${connectedNode}`;
+                    });
+                }
+            });
+
+            return result.slice(1);
+        }
+
+        document.querySelector(".next-button").addEventListener("click", function () {
+            const serializedData = serializeNetwork();
+            console.log("Serialized Network:", serializedData); // -0
+        });
+    });
+</script>
+
+<p class="selection-prompt">Δημιουργήστε τις κατάλληλες ενώσεις, ώστε το παρακάτω Μπεϋζιανό δίκτυο να βρίσκεται στην σωστή μορφή.</p>
+
+<!-- Toolbar for Shapes -->
+<div id="toolbar">
+    <!-- <div class="shape" draggable="true" data-shape="rect">Rectangle</div> -->
+    <div class="shape" draggable="true" data-shape="arrow">Βελάκι</div>
+</div>
+
+<!-- Network Area -->
+<div id="network-area">
+    <svg id="canvas">
+        <defs>
+            <!-- Arrowhead Marker -->
+            <marker id="arrowhead" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                <polygon points="0,0 6,5 0,10" fill="#343a40" />
+            </marker>
+        </defs>
+    </svg>
+</div>
+
+<div class="control-buttons">
+    {% if previous_position > 0 %}
+        <a class="previous-button" href={% url "challenge" id=challenge_id position=previous_position %}>Προηγούμενο</a>
+    {% else %}
+        <a class="previous-button" href={% url "index" %}>Προηγούμενο</a>
+    {% endif %}
+    <input class="next-button" type="button" value="Υποβολή" />
+</div>
+{% endblock %}
