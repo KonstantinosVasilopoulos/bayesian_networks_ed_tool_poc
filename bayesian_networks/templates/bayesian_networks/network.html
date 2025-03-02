@@ -14,28 +14,17 @@
         let movingEndpoint = null;
         let rectangles = [];
         let snappedRects = new Map(); // Track which rectangles each arrow is snapped to
-        let connections = new Map(); // Global hashmap to store connections
 
         // Deserialize given network from string to array of nodes
         const network = '{{ network|safe }}';
         let nodes = [];
-        const re = /\D\(\"((\w|\s)+)\"\)/;
-        network.split("->").forEach((node) => {
-            nodes.push(
-                // Parse the network keeping only the text of each node
-                // e.g. Node("Node A") has to display only "Node A"
-                ...node.split(",").map((t) => {
-                    const found = t.match(re);
-                    return found !== null ? found[1] : null;
-                })
-                .filter((i) => {
-                    return i !== null;
-                })
-            );
+        network.split("->").forEach(node => {
+            nodes.push(...node.split(","));
         });
 
         // Create preset rectangles
         let startingX = 10;
+        nodes = [...new Set(nodes)];
         nodes.forEach((node) => {
             drawRect(startingX, 10, node);
             startingX += 110;
@@ -100,7 +89,6 @@
             canvas.appendChild(text);
 
             rectangles.push({ rect, text });
-            connections.set(rect, new Set());
         }
 
         canvas.addEventListener("mousedown", function (event) {
@@ -165,16 +153,7 @@
             rectangles.forEach(rect => {
                 if (snappedRects.get(arrow)[endpoint === "start" ? "end" : "start"] === rect.rect) return;
 
-                const rectX = parseFloat(rect.rect.getAttribute("x"));
-                const rectY = parseFloat(rect.rect.getAttribute("y"));
-                const width = parseFloat(rect.rect.getAttribute("width"));
-                const height = parseFloat(rect.rect.getAttribute("height"));
-                const sides = [
-                    { x: rectX + width / 2, y: rectY },
-                    { x: rectX + width / 2, y: rectY + height },
-                    { x: rectX, y: rectY + height / 2 },
-                    { x: rectX + width, y: rectY + height / 2 }
-                ];
+                const sides = getRectSides(rect.rect);
                 sides.forEach(side => {
                     const dist = Math.hypot(side.x - x, side.y - y);
                     if (dist < minDist) {
@@ -194,9 +173,6 @@
                 if (startRect && endRect) {
                     const startText = rectangles.find(r => r.rect === startRect)?.text.textContent.trim();
                     const endText = rectangles.find(r => r.rect === endRect)?.text.textContent.trim();
-                    if (startText && endText) {
-                        connections.get(startRect).add(endText);
-                    }
                 }
             }
 
@@ -230,18 +206,51 @@
         // e.g. "Node A->Node B"
         function serializeNetwork() {
             let result = "";
-            console.log(connections); // -0
-            rectangles.forEach(({ rect, text }) => {
-                const nodeName = text.textContent.trim();
-                if (connections.has(rect)) {
-                    const connectedNodes = Array.from(connections.get(rect));
-                    connectedNodes.forEach((connectedNode) => {
-                        result += `,${nodeName}->${connectedNode}`;
+            const arrows = document.querySelectorAll('[data-type="arrow"]');
+            arrows.forEach(arrow => {
+                const x1 = arrow.getAttribute("x1");
+                const y1 = arrow.getAttribute("y1");
+                const x2 = arrow.getAttribute("x2");
+                const y2 = arrow.getAttribute("y2");
+
+                // Find the rectangles the arrow is snapped to
+                let nearestRectStart = null;
+                let nearestRectEnd = null;
+                let minDistStart = 50;
+                let minDistEnd = 50;
+                rectangles.forEach(rect => {
+                    getRectSides(rect.rect).forEach(side => {
+                        const distStart = Math.hypot(side.x - x1, side.y - y1);
+                        const distEnd = Math.hypot(side.x - x2, side.y - y2);
+                        if (distStart < minDistStart) {
+                            minDistStart = distStart;
+                            nearestRectStart = rect.text;
+                        } else if (distEnd < minDistEnd) {
+                            minDistEnd = distEnd;
+                            nearestRectEnd = rect.text;
+                        }
                     });
+                });
+
+                if (nearestRectStart !== null && nearestRectEnd !== null) {
+                    result += `,${nearestRectStart.textContent.trim()}->${nearestRectEnd.textContent.trim()}`;
                 }
             });
 
             return result.slice(1);
+        }
+
+        function getRectSides(rect) {
+            const rectX = parseFloat(rect.getAttribute("x"));
+            const rectY = parseFloat(rect.getAttribute("y"));
+            const width = parseFloat(rect.getAttribute("width"));
+            const height = parseFloat(rect.getAttribute("height"));
+            return [
+                { x: rectX + width / 2, y: rectY },
+                { x: rectX + width / 2, y: rectY + height },
+                { x: rectX, y: rectY + height / 2 },
+                { x: rectX + width, y: rectY + height / 2 }
+            ];
         }
 
         document.querySelector(".next-button").addEventListener("click", function () {
