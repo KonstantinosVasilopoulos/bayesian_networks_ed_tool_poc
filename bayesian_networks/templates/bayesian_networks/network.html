@@ -8,6 +8,8 @@
 {% block content %}
 <script>
     document.addEventListener("DOMContentLoaded", function () {
+        const rectWidth = 300;
+        const rectHeight = 100;
         const canvas = document.getElementById("canvas");
         const networkArea = document.getElementById("network-area");
         let selectedElement = null;
@@ -24,10 +26,16 @@
 
         // Create preset rectangles
         let startingX = 10;
+        let startingY = 10;
         nodes = [...new Set(nodes)];
         nodes.forEach((node) => {
-            drawRect(startingX, 10, node);
-            startingX += 110;
+            if (startingX + rectWidth + 10 >= document.querySelector("#canvas").clientWidth) {
+                startingX = 10;
+                startingY += rectHeight + 10;
+            }
+
+            drawRect(startingX, startingY, node);
+            startingX += rectWidth + 10;
         });
 
         document.querySelectorAll(".shape").forEach(shape => {
@@ -68,27 +76,61 @@
         });
 
         function drawRect(x, y, t) {
+            const maxWidth = rectWidth - 20; // Adjust max width for text wrapping
+            const words = t.split(" ");
+            let lines = [];
+            let currentLine = "";
+
+            // Split text into multiple lines
+            words.forEach(word => {
+                let testLine = currentLine.length === 0 ? word : currentLine + " " + word;
+                let testSVG = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                testSVG.setAttribute("font-size", "16px");
+                testSVG.setAttribute("visibility", "hidden");
+                testSVG.textContent = testLine;
+                canvas.appendChild(testSVG);
+                let textWidth = testSVG.getBBox().width;
+                canvas.removeChild(testSVG);
+
+                if (textWidth < maxWidth) {
+                    currentLine = testLine;
+                } else {
+                    lines.push(currentLine);
+                    currentLine = word;
+                }
+            });
+            lines.push(currentLine);
+
             // Draw rectangle SVG
             const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
             rect.setAttribute("x", x);
             rect.setAttribute("y", y);
-            rect.setAttribute("width", 100);
-            rect.setAttribute("height", 50);
+            rect.setAttribute("width", rectWidth);
+            rect.setAttribute("height", rectHeight);
             rect.setAttribute("fill", "blue");
             rect.setAttribute("class", "draggable");
             rect.setAttribute("data-type", "rect");
             canvas.appendChild(rect);
 
-            // Add text to the rectangle
+            // Add wrapped text
             const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-            text.setAttribute("x", x + 50); // Position text in the center
-            text.setAttribute("y", y + 25);
+            text.setAttribute("x", x + rectWidth / 2);
+            text.setAttribute("y", y + 20);
             text.setAttribute("text-anchor", "middle");
             text.setAttribute("fill", "white");
-            text.textContent = t;
-            canvas.appendChild(text);
 
-            rectangles.push({ rect, text });
+            let tSpans = [];
+            lines.forEach((line, index) => {
+                const tspan = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+                tspan.setAttribute("x", x + rectWidth / 2);
+                tspan.setAttribute("dy", index === 0 ? "0" : "1.2em");
+                tspan.textContent = line;
+                text.appendChild(tspan);
+                tSpans.push(tspan);
+            });
+
+            canvas.appendChild(text);
+            rectangles.push({ rect, text, tSpans });
         }
 
         canvas.addEventListener("mousedown", function (event) {
@@ -113,9 +155,14 @@
                 // Update text position
                 const rectangleData = rectangles.find(r => r.rect === selectedElement);
                 if (rectangleData) {
-                    rectangleData.text.setAttribute("x", x + 50);
-                    rectangleData.text.setAttribute("y", y + 25);
+                    rectangleData.text.setAttribute("x", x + rectWidth / 2);
+                    rectangleData.text.setAttribute("y", y + 20);
                 }
+
+                // Update line position
+                rectangleData.tSpans.forEach((line) => {
+                    line.setAttribute("x", x + rectWidth / 2);
+                });
 
                 // Update arrows snapped to this rectangle
                 updateSnappedArrows(selectedElement);
@@ -147,7 +194,7 @@
 
         function snapToClosestSide(x, y, endpoint, arrow) {
             let closestRect = null;
-            let minDist = 50;
+            let minDist = 100;
             let snappedX = x, snappedY = y;
 
             rectangles.forEach(rect => {
@@ -233,7 +280,9 @@
                 });
 
                 if (nearestRectStart !== null && nearestRectEnd !== null) {
-                    result += `,${nearestRectStart.textContent.trim()}->${nearestRectEnd.textContent.trim()}`;
+                    const startText = Array.from(nearestRectStart.children).map(tspan => tspan.textContent).join(" ").trim();
+                    const endText = Array.from(nearestRectEnd.children).map(tspan => tspan.textContent).join(" ").trim();
+                    result += `,${startText}->${endText}`;
                 }
             });
 
@@ -253,18 +302,69 @@
             ];
         }
 
-        document.querySelector(".next-button").addEventListener("click", function () {
+        document.querySelector(".next-button").addEventListener("click", function () {            
+            // Check whether the provided solution is correct
             const serializedData = serializeNetwork();
-            console.log("Serialized Network:", serializedData); // -0
+            const answers = serializedData.split(",").filter(entity => entity.includes("->"));
+            const numEntities = network.split(",").length;
+            console.log("User answer:", serializedData);
+            let pass = true;
+            let numCorrect = 0;
+            answers.forEach(answer => {
+                if (network.includes(answer)) {
+                    numCorrect++;
+                } else {
+                    pass = false;
+                }
+            });
+
+            if (pass && numCorrect == numEntities) {
+                // Correct solution
+                // Set rectangle color to green
+                rectangles.forEach(rect => {
+                    rect.rect.setAttribute("fill", "green");
+                });
+
+                // Set canvas background color to light green hue
+                document.querySelector("#network-area").style.backgroundColor = "#ecffdc";
+
+                // Change button to redirect to the next network
+                let nextButton = document.querySelector(".next-button");
+                nextButton.value = "Επόμενο";
+                nextButton.onclick = () => {
+                    if ("{{ is_final_network }}".localeCompare("True") == 0) {
+                        // Redirect to the homepage
+                        window.location.replace('{% url "index" %}');
+                    } else {
+                        // Redirect to the next network
+                        window.location.replace('{% url "challenge" id=challenge_id position=next_position %}');
+                    }
+                };
+
+            } else {
+                // Wrong solution
+                // Show alert
+                document.querySelector(".alert-container").style.opacity = 1;
+            }
         });
     });
+
+    function closeAlert() {
+        document.querySelector(".alert").style.opacity = "0";
+    }
 </script>
+
+<div class="alert-container">
+    <div class="alert">
+        <span class="alert-close-button" onclick="closeAlert();">&times;</span>
+        Λάθος απάντηση
+    </div>
+</div>
 
 <p class="selection-prompt">Δημιουργήστε τις κατάλληλες ενώσεις, ώστε το παρακάτω Μπεϋζιανό δίκτυο να βρίσκεται στην σωστή μορφή.</p>
 
 <!-- Toolbar for Shapes -->
 <div id="toolbar">
-    <!-- <div class="shape" draggable="true" data-shape="rect">Rectangle</div> -->
     <div class="shape" draggable="true" data-shape="arrow">Βελάκι</div>
 </div>
 

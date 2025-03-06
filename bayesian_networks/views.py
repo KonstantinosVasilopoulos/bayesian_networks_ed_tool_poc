@@ -21,6 +21,7 @@ class BayesianNetworkView(TemplateView):
     template_name = 'bayesian_networks/network.html'
     challenge = None
     network = None
+    is_final_network = None
 
     def dispatch(self, request, *args, **kwargs):
         # Find the requested challenge
@@ -38,6 +39,7 @@ class BayesianNetworkView(TemplateView):
 
             raise Http404
 
+        self.is_final_network = BayesianNetwork.objects.filter(challenge=self.challenge).count() == kwargs['position']
         return super().dispatch(request, *args, **kwargs)
 
 
@@ -48,6 +50,7 @@ class BayesianNetworkView(TemplateView):
         context['previous_position'] = kwargs['position'] - 1
         context['next_position'] = kwargs['position'] + 1
         context['network'] = self.network.first().network
+        context['is_final_network'] = self.is_final_network
         return context
 
 
